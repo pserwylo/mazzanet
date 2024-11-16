@@ -8,23 +8,30 @@ function initDatabase(callback) {
 	// Set up sqlite database.
 	var db = new sqlite3.Database("data.sqlite");
 	db.serialize(function() {
-		db.run("CREATE TABLE IF NOT EXISTS data (name TEXT)");
+		db.run("CREATE TABLE IF NOT EXISTS message (capcode TEXT, timestamp DATETIME, message TEXT)");
+		db.run("CREATE UNIQUE INDEX IF NOT EXISTS message_capcode_uindex ON message (capcode)");
 		callback(db);
 	});
 }
 
-function updateRow(db, value) {
+function updateRow(db, capcode, timestamp, message) {
 	// Insert some data.
-	var statement = db.prepare("INSERT INTO data VALUES (?)");
-	statement.run(value);
+	var statement = db.prepare("INSERT INTO message VALUES (?, ?, ?)");
+	statement.run(capcode, timestamp, message);
 	statement.finalize();
 }
 
 function readRows(db) {
 	// Read some data.
-	db.each("SELECT rowid AS id, name FROM data", function(err, row) {
-		console.log(row.id + ": " + row.name);
+	db.each("SELECT rowid AS id, capcode, timestamp, message FROM message", function(err, row) {
+		console.log(row.id + "\t" + row.timestamp + "\t" + row.capcode + "\t" + row.message);
 	});
+}
+
+function readRow(db, capcode, callback) {
+	db.get("SELECT rowid as id, capcode, timestamp, message FROM message WHERE capcode = ?", capcode, function(err, row) {
+		callback(row);
+	})
 }
 
 function fetchPage(url, callback) {
@@ -41,13 +48,27 @@ function fetchPage(url, callback) {
 
 function run(db) {
 	// Use request to read in pages.
-	fetchPage("https://morph.io", function (body) {
+	fetchPage("https://mazzanet.net.au/cfa/pager-cfa-all.php", function (body) {
 		// Use cheerio to find things in the page with css selectors.
 		var $ = cheerio.load(body);
 
-		var elements = $("div.media-body span.p-name").each(function () {
-			var value = $(this).text().trim();
-			updateRow(db, value);
+		$("table tr").each(function () {
+			var capcode = $('td.capcode', this).text().trim();
+			var timestamp = $('td.timestamp', this).text().trim();
+			var message = $('td:nth-child(3)', this).text().trim();
+
+			if (!capcode) {
+				return;
+			}
+
+			readRow(db, capcode, function(row) {
+				if (row) {
+					console.log('Row ' + capcode + ' already exists. Skipping');
+				} else {
+					console.log('New row ' + capcode + '. Will insert.');
+					updateRow(db, capcode, timestamp, message);
+				}
+			})
 		});
 
 		readRows(db);
