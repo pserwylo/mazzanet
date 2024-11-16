@@ -6,6 +6,9 @@
     "request": "latest",
     "sqlite3": "latest"
   },
+  "engines" : {
+    "node" : "20.x"
+  },
   "keywords": [
     "scraper",
     "morph"
